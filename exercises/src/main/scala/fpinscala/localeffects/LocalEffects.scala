@@ -98,7 +98,12 @@ sealed abstract class STArray[S,A](implicit manifest: Manifest[A]) {
   // Turn the array into an immutable list
   def freeze: ST[S,List[A]] = ST(value.toList)
 
-  def fill(xs: Map[Int,A]): ST[S,Unit] = ???
+  def fill(xs: Map[Int,A]): ST[S,Unit] = new ST[S, Unit] {
+    def run(s: S): (Unit, S) = {
+      xs.foreach{ case (i, a) => write(i, a) }
+      ((), s)
+    }
+  }
 
   def swap(i: Int, j: Int): ST[S,Unit] = for {
     x <- read(i)
@@ -124,9 +129,30 @@ object STArray {
 object Immutable {
   def noop[S] = ST[S,Unit](())
 
-  def partition[S](a: STArray[S,Int], l: Int, r: Int, pivot: Int): ST[S,Int] = ???
+  def partition[S](a: STArray[S,Int], l: Int, r: Int, pivot: Int): ST[S,Int] = new ST[S, Int] {
+    override def run(s: S): (Int, S) = {
+      val pivotVal = a.read(pivot)
+      a.swap(pivot, r)
+      var j = l
+      for (i <- l until r) if (a.read(i).run(s)._1 < pivotVal.run(s)._1) {
+        a.swap(i, j)
+        j += 1
+      }
+      a.swap(j, r)
+      (j, s)
+    }
+  }
 
-  def qs[S](a: STArray[S,Int], l: Int, r: Int): ST[S, Unit] = ???
+  def qs[S](a: STArray[S,Int], l: Int, r: Int): ST[S, Unit] = new ST[S, Unit] {
+    override def run(s: S): (Unit, S) = {
+      if (l < r) {
+        val pi = partition(a, l, r, l + (r - l) / 2).run(s)._1
+        qs(a, l, pi - 1).run(s)
+        qs(a, pi + 1, r).run(s)
+      }
+      else ((), s)
+    }
+  }
 
   def quicksort(xs: List[Int]): List[Int] =
     if (xs.isEmpty) xs else ST.runST(new RunnableST[List[Int]] {
